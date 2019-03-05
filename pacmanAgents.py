@@ -67,7 +67,6 @@ class BFSAgent(Agent):
         visited = set()
         queue = []
         root_node = Node(state, None, admissibleHeuristic(state), 0)
-        root_node.prev = 'ROOT'
         visited.add(root_node.state)
         queue.append(root_node)
         while queue:
@@ -117,10 +116,10 @@ class DFSAgent(Agent):
         visited = set()
         stack = []
         root_node = Node(state, None, admissibleHeuristic(state), 0)
-        root_node.prev = 'ROOT'
         stack.append(root_node)
         while stack:
-            node = stack.pop()
+            node = stack.pop(-1)
+            visited.add(node)
             if node.state.isWin():
                 action = node.action_finder(root_node)
                 return action
@@ -144,8 +143,7 @@ class DFSAgent(Agent):
                     action = min_node.action_finder(root_node)
                     return action
                 if new_state not in visited:
-                    h = 0 if new_state is None else admissibleHeuristic(
-                        new_state)
+                    h = admissibleHeuristic(new_state)
                     new_node = Node(
                         new_state, new_action, h, node.g_cost+1)
                     new_node.prev = node
@@ -164,7 +162,6 @@ class AStarAgent(Agent):
             return Directions.STOP
         # Create new node
         root_node = Node(state, None, admissibleHeuristic(state), 0)
-        root_node.prev = 'ROOT'
         closed = set()
         open_pq = []
         graph = dict()
@@ -173,6 +170,7 @@ class AStarAgent(Agent):
         while open_pq:
             node = open_pq.pop(0)
             closed.add(node)
+            graph[node.state]= node
             if node.state.isWin():
                 return node.action_finder(root_node)
             if node.state.isLose():
@@ -194,8 +192,10 @@ class AStarAgent(Agent):
                 new_node.prev = parent_node
                 if new_state not in graph:
                     open_pq.append(new_node)
-                elif new_node.tot_cost < graph[state].tot_cost:
-                    graph[new_state].prev = parent_node
+                # elif new_node.tot_cost < graph[state].tot_cost:
+                    # If this node already in the graph, and has a better total cost,
+                    # we need to redirect the node
+                    # graph[new_state].prev = parent_node
             # sort the pq first by the total cost, then by the negative g_cost(the depth of the node)
             open_pq.sort(key=lambda node: [node.tot_cost, -node.g_cost])
 
