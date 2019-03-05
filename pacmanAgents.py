@@ -64,33 +64,45 @@ class BFSAgent(Agent):
         if state.isWin() or state.isLose():
             return Directions.STOP
         # Use fringe_paths_queue to track all paths and states
-        fringe_paths_queue = []
-        init_node = [state, None]
-        fringe_paths_queue.append([init_node])
-        while fringe_paths_queue:
-            # Get the current path
-            path = fringe_paths_queue.pop(0)
-            # Get the current state, which is the last one in the path
-            state = path[-1][0]
-            if state is None or state.isWin():
-                # Choose the action on the corresponding path,
-                # wich lead to the win state.
-                action = path[1][1]
+        visited = set()
+        queue = []
+        root_node = Node(state, None, admissibleHeuristic(state), 0)
+        root_node.prev = 'ROOT'
+        visited.add(root_node.state)
+        queue.append(root_node)
+        while queue:
+            node = queue.pop(0)
+            visited.add(node.state)
+            if node.state.isWin():
+                action = node.action_finder(root_node)
                 return action
-            # If in a deadlok, skip this one, continue to the next one in the loop.
-            if state.isLose():
+            # If in a deadlock, skip this one, continue the loop.
+            if node.state.isLose():
                 continue
-            legal = state.getLegalPacmanActions()
-            successors = [(state.generatePacmanSuccessor(action), action)
+            legal = node.state.getLegalPacmanActions()
+            successors = [(node.state.generatePacmanSuccessor(action), action)
                           for action in legal]
             for successor in successors:
-                # In each iteration the state is different,
-                # so I don't need to check whether the state is in explored or fringe_path.
-                # shallow copy the original path
-                new_path = list(path)
-                # create a new path
-                new_path.append(successor)
-                fringe_paths_queue.append(new_path)
+                # If current state has been visted, skip
+                new_state, new_action = successor[0], successor[1]
+                # If exceed the limit
+                if new_state is None:
+                    min_node = node
+                    # Iterate all nodes in queue, find the one with lowest total cost
+                    for n in queue:
+                        if n.tot_cost < min_node.tot_cost:
+                            min_node = n
+                    # return the action lead to this node.
+                    action = min_node.action_finder(root_node)
+                    return action
+                if new_state not in visited:
+                    h = 0 if new_state is None else admissibleHeuristic(
+                        new_state)
+                    new_node = Node(
+                        new_state, new_action, h, node.g_cost+1)
+                    new_node.prev = node
+                    # create a new path
+                    queue.append(new_node)
 
 
 class DFSAgent(Agent):
@@ -100,27 +112,45 @@ class DFSAgent(Agent):
 
     # GetAction Function: Called with every frame
     def getAction(self, state):
-        # TODO: write DFS Algorithm instead of returning Directions.STOP
-        # return Directions.STOP
         if state.isWin() or state.isLose():
             return Directions.STOP
-        init_node = [state, None]
-        fringe_paths_stack = [[init_node]]
-        while fringe_paths_stack:
-            path = fringe_paths_stack.pop()
-            state = path[-1][0]
-            if state is None or state.isWin():
-                action = path[1][1]
+        visited = set()
+        stack = []
+        root_node = Node(state, None, admissibleHeuristic(state), 0)
+        root_node.prev = 'ROOT'
+        stack.append(root_node)
+        while stack:
+            node = stack.pop()
+            if node.state.isWin():
+                action = node.action_finder(root_node)
                 return action
-            if state.isLose():
+            # If in a deadlock, skip this one, continue the loop.
+            if node.state.isLose():
                 continue
-            legal = state.getLegalPacmanActions()
-            successors = [(state.generatePacmanSuccessor(action), action)
+            legal = node.state.getLegalPacmanActions()
+            successors = [(node.state.generatePacmanSuccessor(action), action)
                           for action in legal]
             for successor in successors:
-                new_path = list(path)
-                new_path.append(successor)
-                fringe_paths_stack.append(new_path)
+                # If current state has been visted, skip
+                new_state, new_action = successor[0], successor[1]
+                # If exceed the limit
+                if new_state is None:
+                    min_node = node
+                    # Iterate all nodes in stack, find the one with lowest total cost
+                    for n in stack:
+                        if n.tot_cost < min_node.tot_cost:
+                            min_node = n
+                    # return the action lead to this node.
+                    action = min_node.action_finder(root_node)
+                    return action
+                if new_state not in visited:
+                    h = 0 if new_state is None else admissibleHeuristic(
+                        new_state)
+                    new_node = Node(
+                        new_state, new_action, h, node.g_cost+1)
+                    new_node.prev = node
+                    # create a new path
+                    stack.append(new_node)
 
 
 class AStarAgent(Agent):
@@ -132,20 +162,55 @@ class AStarAgent(Agent):
     def getAction(self, state):
         if state.isWin() or state.isLose():
             return Directions.STOP
-        node = Node(state, admissibleHeuristic(state), cost=0)
-        node.tot_cost = node.heuristic + 0
-        sudo_priority_queue = []
-        sudo_priority_queue.append(node)
-        while sudo_priority_queue:
-            sudo_priority_queue.sort(key = lambda node: node.tot_cost)
-            
+        # Create new node
+        root_node = Node(state, None, admissibleHeuristic(state), 0)
+        root_node.prev = 'ROOT'
+        closed = set()
+        open_pq = []
+        graph = dict()
+        open_pq.append(root_node)
+        graph[state] = root_node
+        while open_pq:
+            node = open_pq.pop(0)
+            closed.add(node)
+            if node.state.isWin():
+                return node.action_finder(root_node)
+            if node.state.isLose():
+                continue
+            legal = node.state.getLegalPacmanActions()
+            successors = [(node.state.generatePacmanSuccessor(action), action)
+                          for action in legal]
+            for successor in successors:
+                parent_node = node
+                new_state, new_action = successor[0], successor[1]
+                if new_state is None:
+                    # If exceed the limit, the node with lowest total cost is the current node
+                    # return the action lead to this node.
+                    action = parent_node.action_finder(root_node)
+                    return action
+                h = admissibleHeuristic(new_state)
+                new_node = Node(new_state, new_action,
+                                h, parent_node.g_cost+1)
+                new_node.prev = parent_node
+                if new_state not in graph:
+                    open_pq.append(new_node)
+                elif new_node.tot_cost < graph[state].tot_cost:
+                    graph[new_state].prev = parent_node
+            # sort the pq first by the total cost, then by the negative g_cost(the depth of the node)
+            open_pq.sort(key=lambda node: [node.tot_cost, -node.g_cost])
 
 
 class Node:
-    def __init__(self, state, heuristic, cost):
+    def __init__(self, state, action, heuristic, g_cost):
         self.state = state
         self.heuristic = heuristic
-        self.g_cost = cost
+        self.g_cost = g_cost
         self.prev = None
-        self.next = None
-        self.tot_cost = None 
+        self.tot_cost = self.g_cost + self.heuristic
+        self.action = action
+
+    def action_finder(self, root):
+        n = self
+        while n.prev != root:
+            n = n.prev
+        return n.action
