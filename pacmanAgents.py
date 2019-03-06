@@ -72,17 +72,9 @@ class BFSAgent(Agent):
         while queue:
             node = queue.pop(0)
             visited.add(node.state)
-            if node.state.isWin():
-                action = node.action_finder(root_node)
-                return action
-            # If in a deadlock, skip this one, continue the loop.
-            if node.state.isLose():
-                continue
             legal = node.state.getLegalPacmanActions()
-            successors = [(node.state.generatePacmanSuccessor(action), action)
-                          for action in legal]
+            successors = [(node.state.generatePacmanSuccessor(action), action) for action in legal]
             for successor in successors:
-                # If current state has been visted, skip
                 new_state, new_action = successor[0], successor[1]
                 # If exceed the limit
                 if new_state is None:
@@ -95,12 +87,15 @@ class BFSAgent(Agent):
                     action = min_node.action_finder(root_node)
                     return action
                 if new_state not in visited:
-                    h = 0 if new_state is None else admissibleHeuristic(
-                        new_state)
-                    new_node = Node(
-                        new_state, new_action, h, node.g_cost+1)
+                    h = 0 if new_state is None else admissibleHeuristic(new_state)
+                    new_node = Node(new_state, new_action, h, node.g_cost+1)
                     new_node.prev = node
-                    # create a new path
+                    if new_node.state.isWin():
+                        action = new_node.action_finder(root_node)
+                        return action
+                    # If in a deadlock, skip this one, continue the loop.
+                    if new_node.state.isLose():
+                        continue
                     queue.append(new_node)
 
 
@@ -116,19 +111,13 @@ class DFSAgent(Agent):
         visited = set()
         stack = []
         root_node = Node(state, None, admissibleHeuristic(state), 0)
+        visited.add(state)
         stack.append(root_node)
         while stack:
             node = stack.pop(-1)
-            visited.add(node)
-            if node.state.isWin():
-                action = node.action_finder(root_node)
-                return action
-            # If in a deadlock, skip this one, continue the loop.
-            if node.state.isLose():
-                continue
+            visited.add(node.state)          
             legal = node.state.getLegalPacmanActions()
-            successors = [(node.state.generatePacmanSuccessor(action), action)
-                          for action in legal]
+            successors = [(node.state.generatePacmanSuccessor(action), action) for action in legal]
             for successor in successors:
                 # If current state has been visted, skip
                 new_state, new_action = successor[0], successor[1]
@@ -144,10 +133,14 @@ class DFSAgent(Agent):
                     return action
                 if new_state not in visited:
                     h = admissibleHeuristic(new_state)
-                    new_node = Node(
-                        new_state, new_action, h, node.g_cost+1)
+                    new_node = Node(new_state, new_action, h, node.g_cost+1)
                     new_node.prev = node
-                    # create a new path
+                    if new_node.state.isWin():
+                        action = new_node.action_finder(root_node)
+                        return action
+                    # If in a deadlock, skip this one, continue the loop.
+                    if new_node.state.isLose():
+                        continue
                     stack.append(new_node)
 
 
@@ -166,10 +159,12 @@ class AStarAgent(Agent):
         open_pq = []
         graph = dict()
         open_pq.append(root_node)
+        closed.add(root_node.state)
+        # This is a dictionary of {state: Node}
         graph[state] = root_node
         while open_pq:
             node = open_pq.pop(0)
-            closed.add(node)
+            closed.add(node.state)
             graph[node.state]= node
             if node.state.isWin():
                 return node.action_finder(root_node)
@@ -192,10 +187,12 @@ class AStarAgent(Agent):
                 new_node.prev = parent_node
                 if new_state not in graph:
                     open_pq.append(new_node)
-                # elif new_node.tot_cost < graph[state].tot_cost:
+                elif new_node.tot_cost < graph[state].tot_cost:
                     # If this node already in the graph, and has a better total cost,
                     # we need to redirect the node
-                    # graph[new_state].prev = parent_node
+                    graph[new_state].prev = parent_node
+                    # Update the total cost of the node which already exist
+                    graph[new_state].tot_cost= new_node.tot_cost
             # sort the pq first by the total cost, then by the negative g_cost(the depth of the node)
             open_pq.sort(key=lambda node: [node.tot_cost, -node.g_cost])
 
