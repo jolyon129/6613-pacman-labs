@@ -56,6 +56,7 @@ class RandomSequenceAgent(Agent):
 class HillClimberAgent(Agent):
     # Initialization Function: Called one time when the game starts
     def registerInitialState(self, state):
+        possible = state.getAllPossibleActions()
         return;
 
     # GetAction Function: Called with every frame
