@@ -207,6 +207,10 @@ class Node:
         self.action = action
 
     def action_finder(self, root):
+        '''
+        Along with the prev pointers, find the root node 
+        and the action which leads to the current node
+        '''
         n = self
         while n.prev != root:
             n = n.prev
