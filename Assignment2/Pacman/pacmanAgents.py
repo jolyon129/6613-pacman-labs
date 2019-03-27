@@ -60,6 +60,10 @@ class RandomSequenceAgent(Agent):
 class HillClimberAgent(Agent):
     # Initialization Function: Called one time when the game starts
     def registerInitialState(self, state):
+         # the size of population
+        self.P_SIZE = 8
+        # The length of chromosome
+        self.C_SIZE = 5
         possible = state.getAllPossibleActions()
         # Randomly initialize the action list
         self.action_list = [possible[random.randint(
@@ -86,7 +90,7 @@ class HillClimberAgent(Agent):
                     new_action_list.append(
                         possible[random.randint(0, len(possible)-1)])
                 else:
-                    # else leave it
+                    # else leave it the same as in the current action list
                     new_action_list.append(self.action_list[i])
             # Keep track of the successive states
             states = [init_state]
@@ -108,6 +112,8 @@ class HillClimberAgent(Agent):
             val = gameEvaluation(init_state, states[-1])
             if val > best_value:
                 best_action_list = new_action_list
+                # Let the current action list be the new  action list
+                self.action_list = best_action_list
                 best_value = val
             # if already exceed the limit
             if exceed_limit:
@@ -123,79 +129,120 @@ class GeneticAgent(Agent):
         # The length of chromosome
         self.C_SIZE = 5
         # Store the last valid generation in case of exceeding the limit
-        self.last_generation = None
+        self.previous_population = None
         self.exceed_limit = False
-        possible = state.getAllPossibleActions()
+        # Store the initial population
         self.init_population = []
+        possible = state.getAllPossibleActions()
         for i in range(self.P_SIZE):
             # Generate 8 random chromosome as initial population
             action_list = [possible[random.randint(
                 0, len(possible)-1)] for i in range(self.C_SIZE)]
             self.init_population.append(action_list)
-        self.last_generation = self.init_population
         return
 
     # GetAction Function: Called with every frame
     def getAction(self, state):
-        selected_chrom_with_evl = self.rank_selection(state)
-        if self.exceed_limit:
-            # If exceed the limit, use the last valid generation
-            pop = self.producePopulationWithEval(self.last_generation)
-            pop.sort(key=lambda p: p[1])
-            # find the one with highest evaluation value
-            return pop[-1][0]
-        new_generation = self.reproduce(state,selected_chrom_with_evl)
-        for chrom in new_generation:
-            #Todo
-            # self.getEvaluationOfActionList()
-        return 
+        # Set the initial flag
+        self.exceed_limit = False
+        self.init_population = []
+        possible = state.getAllPossibleActions()
+        for i in range(self.P_SIZE):
+            # Generate 8 random chromosome as initial population
+            action_list = [possible[random.randint(
+                0, len(possible)-1)] for i in range(self.C_SIZE)]
+            self.init_population.append(action_list)
 
-    def rank_selection(self, state):
-        population_with_eval = self.producePopulationWithEval(state,self.init_population)
-        population_with_eval.sort(key=lambda p: p[1])
-        selected_population_with_eval = []
+        population = self.init_population
+        # Calculate the evaluation on the inital population list
+        pop_with_eval = self.getAllEvaluation(state, population)      
+        # If doesn't exceed the limit
+        while not self.exceed_limit:
+            # Assign the current population to the prev_pop_w_eval
+            prev_pop_w_eval = pop_with_eval
+            # Run rank selection on the new population to select parents that are used to reproduce.
+            selected_parents = self.rank_selection(state, pop_with_eval)
+            # Use the selected pairs to reproduce new generation
+            new_generation = self.reproduce(state, selected_parents)
+            # Mute some chromosomes in the new generation with possibility of 10%
+            for chrom in new_generation:
+                if random.random() <= 0.1:
+                    # Randomly mute one action in each chromosome
+                    possible = state.getAllPossibleActions()
+                    chrom[random.randint(
+                        0, len(chrom)-1)] = possible[random.randint(0, len(possible)-1)]
+            # Assign to the new population and repeat
+            pop_with_eval = self.getAllEvaluation(state, new_generation)
+
+        # When exceeds the limit, use the previous one as our new population
+        new_population_with_eval = prev_pop_w_eval
+        new_population_with_eval.sort(key= lambda p: p[1])
+        # find the chromosome with highest evaluation value, and return its first action
+        return new_population_with_eval[-1][0][0]
+
+    def rank_selection(self, state, population_with_eval):
+        """Run rank selection on a population to select pairs that are used to reproduce
+
+        Arguments:
+            population_with_eval: A list of population with evaluation
+            state: the current state
+
+        Returns:
+            A list of selected chromosomes
+        """
+        # Sort population based on its evaluation value.
+        temp = sorted(population_with_eval, key=lambda p: p[1])
+        # Rank population
+        ranked_population = [(j[0], i) for i, j in enumerate(temp, 1)]
+        selected_parents = []
         for i in range(self.P_SIZE):
             # Rank selection
-            choice = self.weighted_random_choice(population_with_eval, sum_evl)
-            selected_population_with_eval.append(choice)
-        return selected_population_with_eval
+            choice, _ = self.rank_selection_choice(ranked_population)
+            selected_parents.append(choice)
+        return selected_parents
 
-    def producePopulationWithEval(self, state, population):
-        '''Produce a new list which has evluation on each chromosome
-        
+    def getAllEvaluation(self, state, population):
+        """
+        Calculate the evluation of each chromosome in the population list.
+        Return a list which has evluation on each chromosome and the total sum of evaluation value
+        Arguments:
+            population: the population list to be processed
+            state: the current state
+
         Returns:
-            list -- [[chromosome1, evaluation1],[chromosome2, evaluation2],...]
-        '''
-        population_with_eval = []
-        sum_evl = 0
-        for chromosome in self.init_population:
+            [(chromosome1, evaluation1),(chromosome2, evaluation2),...]
+            If exceeds the limit, return None
+        """
+        selected_parents = []
+        for chromosome in population:
             evaluaton = self.getEvaluationOfActionList(state, chromosome)
-            population_with_eval.append([chromosome, evaluaton])
-            sum_evl += evaluaton
+            selected_parents.append((chromosome, evaluaton))
             if self.exceed_limit:
-                break
-        return population_with_eval
+                return None
+        return selected_parents
 
-
-    def weighted_random_choice(self, population_with_eval, sum_wieght):
-        '''
-            Fast weighted random choice.
-            This method is from https://eli.thegreenplace.net/2010/01/22/weighted-random-generation-in-python
-        '''
-        rnd = random.random()*sum_wieght
-        for p in population_with_eval:
+    def rank_selection_choice(self, ranked_population):
+        """ Fast weighted random selection.
+        Choose a chromosome based on its rank.
+        Arguments:
+            ranked_population: [(chrom1, 1),(chrom2,2)...(chrom8,8)]
+        Returns:
+            chrom_k
+        """
+        rnd = random.random()*36
+        for p in ranked_population:
             rnd -= p[1]
             if rnd < 0:
-                return p
+                return p[0], p[1]
 
     def getEvaluationOfActionList(self, init_state, chromosome):
         ''' Get evaluation for a action list. 
-        If generateSuccessor runs out of calls in the middle, flat self.exceed_limit = True
-        
+        If generatePacmanSuccessor runs out of calls in the middle, flat self.exceed_limit = True
+
         Arguments:
-            init_state {} -- state
-            chromosome {} -- the action list
-        
+            init_state -- current state
+            chromosome -- the action list
+
         Returns:
             float -- the value of evaluation
         '''
@@ -204,7 +251,7 @@ class GeneticAgent(Agent):
         self.exceed_limit = False
         temp_state = init_state
         for action in chromosome:
-            # If already achieve a terminal state, then break.
+                # If already achieve a terminal state, then break.
             if states[-1].isWin() + states[-1].isLose() != 0:
                 break
             temp_state = temp_state.generatePacmanSuccessor(action)
@@ -214,39 +261,39 @@ class GeneticAgent(Agent):
                 # If exceed the limit, FLAG!
                 self.exceed_limit = True
                 break
-        # Only evaluate on the initial state and the last valid state in states array
+        # Only evaluate on the initial state and the last valid state in state array
         # Return evluateion and the flag of whether exceeds the limit
         return gameEvaluation(init_state, states[-1])
 
-    def reproduce(self, state, population):
-        #
+    def reproduce(self, state, selected_parents):
+        """
+        Reproduce new generation. 
+        Returns:
+            the new generation list -- List
+        """
         new_generation = []
-        pairs = [(population[i],population[i+1]) for i in range(0,8,2)]
+        pairs = [(selected_parents[i], selected_parents[i+1])
+                 for i in range(0, self.P_SIZE, 2)]
         for pair in pairs:
             rdn = random.randint(1, 10)
-            # 70% chance that the
             new_chrom_1 = [None]*self.C_SIZE
             new_chrom_2 = [None]*self.C_SIZE
+            # 70% chance that the pair will generate new chromosome by cross-over
             if rdn <= 7:
                 # start mutation
                 for i in range(self.C_SIZE):
                     # 50%-50% chance
-                    if random.random() <0.5:
+                    if random.random() < 0.5:
                         new_chrom_1[i] = pair[0][i]
                         new_chrom_2[i] = pair[1][i]
                     else:
                         new_chrom_1[i] = pair[1][i]
                         new_chrom_2[i] = pair[0][i]
             else:
-                # keep the pair in the next generation
-                new_chrom_1, new_chrom_2= pair[0], pair[1]
+                # keep the orignal pair in the next generation
+                new_chrom_1, new_chrom_2 = pair[0], pair[1]
             new_generation.append(new_chrom_1)
             new_generation.append(new_chrom_2)
-        for chrom in new_generation:
-            if random.random() <=0.1:
-                # Randomly mute one action in each chrom
-                possible = state.getAllPossibleActions()
-                chrom[random.randint(0, len(chrom)-1)] = possible[random.randint(0, len(possible)-1)]
         return new_generation
 
 
