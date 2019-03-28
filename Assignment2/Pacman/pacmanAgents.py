@@ -79,7 +79,7 @@ class HillClimberAgent(Agent):
         best_action_list = self.action_list
         best_value = -float('inf')
         exceed_limit = False
-        while True:  # Loop until reach the limit of
+        while True:  # Loop until reach the limit
             new_action_list = []
             for i in range(5):
                 # 50% chance to flip the cureent action
@@ -112,7 +112,7 @@ class HillClimberAgent(Agent):
             val = gameEvaluation(init_state, states[-1])
             if val > best_value:
                 best_action_list = new_action_list
-                # Let the current action list be the new  action list
+                # Let the current action list be the new action list
                 self.action_list = best_action_list
                 best_value = val
             # if already exceed the limit
@@ -155,7 +155,7 @@ class GeneticAgent(Agent):
 
         population = self.init_population
         # Calculate the evaluation on the inital population list
-        pop_with_eval = self.getAllEvaluation(state, population)      
+        pop_with_eval = self.getAllEvaluation(state, population)
         # If doesn't exceed the limit
         while not self.exceed_limit:
             # Assign the current population to the prev_pop_w_eval
@@ -176,7 +176,7 @@ class GeneticAgent(Agent):
 
         # When exceeds the limit, use the previous one as our new population
         new_population_with_eval = prev_pop_w_eval
-        new_population_with_eval.sort(key= lambda p: p[1])
+        new_population_with_eval.sort(key=lambda p: p[1])
         # find the chromosome with highest evaluation value, and return its first action
         return new_population_with_eval[-1][0][0]
 
@@ -300,9 +300,118 @@ class GeneticAgent(Agent):
 class MCTSAgent(Agent):
     # Initialization Function: Called one time when the game starts
     def registerInitialState(self, state):
+        self.ROLLOUT_LIMIT = 5
         return
 
     # GetAction Function: Called with every frame
     def getAction(self, state):
-        # TODO: write MCTS Algorithm instead of returning Directions.STOP
-        return Directions.STOP
+        root = Node (None, state)
+        self.exceed_limit = False
+        while not self.exceed_limit:
+            new_node, new_state = self.treePolicy(root, state)
+            # Check if exceed the limit
+            if self.exceed_limit:
+                break
+            reward = self.defaultPolicy(new_state)
+            # Check if exceed mthe limit
+            if self.exceed_limit:
+                break
+            self.backup(new_node, reward)
+
+        best_child = None
+        largest_count = -1
+        # Find the child node with largest visited count
+        for child in root.children:
+            if child.visited_count > largest_count:
+                best_child = child
+                largest_count = child.visited_count
+        return best_child.action
+
+    def treePolicy(self, node, state):
+        """ 
+        Return a new slected node and the corresponding state
+        """
+        c_node = node
+        c_state = state
+        while not (c_state.isWin() or c_state.isLose() or len(c_node.legal_actions) == 0):
+            if len(c_node.unexpanded_actions) > 0:
+                return self.expand(c_node, c_state)
+            else:
+                new_child = self.bestChild(c_node)
+                new_state = c_state.generatePacmanSuccessor(new_child.action)
+                if new_state is None:
+                    self.exceed_limit = True
+                    return None, None
+                c_node = new_child
+                c_state = new_state
+        return c_node, c_state
+
+    def expand(self, node, state):
+        action = node.unexpanded_actions.pop()
+        next_state = state.generatePacmanSuccessor(action)
+        if next_state is None:
+            self.exceed_limit = True
+            # If exceeds the limit, children dont exist, return None
+            return None, None
+        child = Node(action, next_state)
+        # Initiate the list of unexpanded_actions
+        # child.unexpanded_actions = next_state.getLegalPacmanActions()
+        # Add the new node to the children of the parent
+        node.children.append(child)
+        # Lik to the parent
+        child.parent = node
+        # Return the child node and the corresponding state
+        return child, next_state
+
+    def bestChild(self, parent):
+        """Find the best child of the parent
+        """
+        largest_ucb = -float('inf')
+        best_child = None
+        for child in parent.children:
+            ucb = child.reward/child.visited_count + \
+                math.sqrt(2*math.log(parent.visited_count)/child.visited_count)
+            if ucb > largest_ucb:
+                best_child = child
+                largest_ucb = ucb
+        return best_child
+
+    def defaultPolicy(self, state):
+        n_state = state
+        count = 0
+        while not (n_state.isWin() or n_state.isLose() or count > self.ROLLOUT_LIMIT):
+            count += 1
+            actions = n_state.getLegalPacmanActions()
+            # Randomly choose an action and generate the successor
+            n_state = n_state.generatePacmanSuccessor(
+                actions[random.randint(0, len(actions)-1)])
+            # If exceed the limit
+            if n_state is None:
+                self.exceed_limit = True
+                return None
+        # Calculate the reward
+        reward = gameEvaluation(state, n_state)
+        return reward
+
+    def backup(self, node, reward):
+        while node is not None:
+            node.visited_count += 1
+            node.reward += reward
+            node = node.parent
+        return
+
+
+class Node:
+    def __init__(self, action, state):
+        self.reward = 0
+        self.visited_count = 0
+        self.parent = None
+        self.children = []
+        # The action leading to the current state
+        self.action = action
+        # store the legal actions
+        self.legal_actions = state.getLegalPacmanActions()
+        # Keep track of the expanded actions
+        self.unexpanded_actions = state.getLegalPacmanActions()
+
+
