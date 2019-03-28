@@ -305,18 +305,17 @@ class MCTSAgent(Agent):
 
     # GetAction Function: Called with every frame
     def getAction(self, state):
-        root = Node (None, state)
+        root = Node(None, state)
+        self.rootstate = state
         self.exceed_limit = False
         while not self.exceed_limit:
-            new_node, new_state = self.treePolicy(root, state)
+            new_node = self.treePolicy(root, state)
             # Check if exceed the limit
             if self.exceed_limit:
                 break
-            reward = self.defaultPolicy(new_state)
+            node, reward = self.defaultPolicy(new_node)
             # Check if exceed mthe limit
-            if self.exceed_limit:
-                break
-            self.backup(new_node, reward)
+            self.backup(node, reward)
 
         best_child = None
         largest_count = -1
@@ -335,63 +334,96 @@ class MCTSAgent(Agent):
         c_state = state
         while not (c_state.isWin() or c_state.isLose() or len(c_node.legal_actions) == 0):
             if len(c_node.unexpanded_actions) > 0:
-                return self.expand(c_node, c_state)
+                return self.expand(c_node)
             else:
                 new_child = self.bestChild(c_node)
-                new_state = c_state.generatePacmanSuccessor(new_child.action)
-                if new_state is None:
-                    self.exceed_limit = True
-                    return None, None
                 c_node = new_child
-                c_state = new_state
-        return c_node, c_state
+        return c_node
 
-    def expand(self, node, state):
+    def expand(self, node):
         action = node.unexpanded_actions.pop()
-        next_state = state.generatePacmanSuccessor(action)
-        if next_state is None:
-            self.exceed_limit = True
-            # If exceeds the limit, children dont exist, return None
-            return None, None
-        child = Node(action, next_state)
-        # Initiate the list of unexpanded_actions
-        # child.unexpanded_actions = next_state.getLegalPacmanActions()
+        temp_node = node
+        predecessors = []
+        while temp_node.parent is not None:
+            predecessors.insert(0, temp_node)
+            temp_node = temp_node.parent
+        temp_state = self.rootstate
+        # Loop up the latest state
+        for p in predecessors:
+            prev_state = temp_state
+            temp_state = temp_state.generatePacmanSuccessor(p.action)
+            if temp_state is None:
+                self.exceed_limit = True
+                return None
+            elif temp_state.isWin() or temp_state.isLose():
+                action = p.action
+                break
+            # else:
+                # legal_actions = temp_state.getLegalPacmanActions()
+                # for action in legal_actions:
+                #     if action not in p.legal_actions:
+                #         p.unexpanded_actions.append(action)
+                #         break
+        new_node = Node(action, temp_state)
         # Add the new node to the children of the parent
-        node.children.append(child)
-        # Lik to the parent
-        child.parent = node
+        node.children.append(new_node)
+        # Link to the parent
+        new_node.parent = node
         # Return the child node and the corresponding state
-        return child, next_state
+        return new_node
 
-    def bestChild(self, parent):
+    def bestChild(self, node):
         """Find the best child of the parent
         """
         largest_ucb = -float('inf')
         best_child = None
-        for child in parent.children:
+        for child in node.children:
             ucb = child.reward/child.visited_count + \
-                math.sqrt(2*math.log(parent.visited_count)/child.visited_count)
+                math.sqrt(2*math.log(node.visited_count)/child.visited_count)
             if ucb > largest_ucb:
                 best_child = child
                 largest_ucb = ucb
+            elif ucb == largest_ucb and random.randint(0, 1):
+                best_child = child
         return best_child
 
-    def defaultPolicy(self, state):
-        n_state = state
+    def defaultPolicy(self,node):
+        temp_node = node
+        predecessors = []
+        while temp_node.parent is not None:
+            predecessors.insert(0, temp_node)
+            temp_node = temp_node.parent
+        temp_state = self.rootstate
+        # Look up the latest state
+        for p in predecessors:
+            temp_state = temp_state.generatePacmanSuccessor(p.action)
+            if temp_state is None:
+                self.exceed_limit = True
+                return p, gameEvaluation(self.rootstate,prev_state)
+            elif temp_state.isWin() or temp_state.isLose():
+                return p, gameEvaluation(self.rootstate, temp_state)
+
+        n_state = temp_state
         count = 0
-        while not (n_state.isWin() or n_state.isLose() or count > self.ROLLOUT_LIMIT):
+        while (count < self.ROLLOUT_LIMIT):
             count += 1
             actions = n_state.getLegalPacmanActions()
             # Randomly choose an action and generate the successor
+            prev_state= n_state
             n_state = n_state.generatePacmanSuccessor(
                 actions[random.randint(0, len(actions)-1)])
             # If exceed the limit
-            if n_state is None:
+            if n_state is None :
                 self.exceed_limit = True
-                return None
+                n_state = prev_state
+                break
+            if n_state.isWin() or n_state.isLose():
+                n_state = prev_state
+                break
+                
         # Calculate the reward
-        reward = gameEvaluation(state, n_state)
-        return reward
+        reward = gameEvaluation(self.rootstate, n_state)
+        return node, reward
 
     def backup(self, node, reward):
         while node is not None:
@@ -404,7 +436,7 @@ class MCTSAgent(Agent):
 class Node:
     def __init__(self, action, state):
         self.reward = 0
-        self.visited_count = 0
+        self.visited_count = 1
         self.parent = None
         self.children = []
         # The action leading to the current state
@@ -413,5 +445,3 @@ class Node:
         self.legal_actions = state.getLegalPacmanActions()
         # Keep track of the expanded actions
         self.unexpanded_actions = state.getLegalPacmanActions()
-
-
